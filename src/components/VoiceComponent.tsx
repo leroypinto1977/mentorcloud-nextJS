@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 // ElevenLabs
 import { useConversation } from "@11labs/react";
@@ -17,16 +18,18 @@ import {
   MessageCircle,
   User,
   Bot,
+  ExternalLink,
 } from "lucide-react";
 
 const VoiceChat = () => {
+  const router = useRouter();
   const [hasPermission, setHasPermission] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [transcription, setTranscription] = useState<
     Array<{ speaker: string; text: string; timestamp: Date }>
   >([]);
-  const [isTranscriptVisible, setIsTranscriptVisible] = useState(true);
+  const [conversationEnded, setConversationEnded] = useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const conversation = useConversation({
@@ -34,9 +37,12 @@ const VoiceChat = () => {
       console.log("Connected to ElevenLabs");
       // Clear transcription when starting new conversation
       setTranscription([]);
+      setConversationEnded(false);
     },
     onDisconnect: () => {
       console.log("Disconnected from ElevenLabs");
+      // Mark conversation as ended and show navigation option
+      setConversationEnded(true);
     },
     onMessage: (message) => {
       console.log("Received message:", message);
@@ -88,8 +94,9 @@ const VoiceChat = () => {
 
   const handleStartConversation = async () => {
     try {
-      // Clear previous transcription
+      // Clear previous transcription and reset conversation state
       setTranscription([]);
+      setConversationEnded(false);
 
       // Replace with your actual agent ID or URL
       const conversationId = await conversation.startSession({
@@ -105,10 +112,15 @@ const VoiceChat = () => {
   const handleEndConversation = async () => {
     try {
       await conversation.endSession();
+      // Note: onDisconnect will be called automatically which sets conversationEnded to true
     } catch (error) {
       setErrorMessage("Failed to end conversation");
       console.error("Error ending conversation:", error);
     }
+  };
+
+  const handleViewProfile = () => {
+    router.push("/user-profile");
   };
 
   const toggleMute = async () => {
@@ -122,7 +134,7 @@ const VoiceChat = () => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto space-y-6">
       <Card className="h-[600px] max-h-[80vh] flex flex-col">
         <CardHeader className="border-b bg-gray-50 dark:bg-gray-900">
           <CardTitle className="flex items-center justify-between">
@@ -271,7 +283,7 @@ const VoiceChat = () => {
 
                 <div className="text-right">
                   {status === "connected" && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
                       {isSpeaking ? (
                         <span className="flex items-center gap-1">
                           <div className="w-2 h-2 bg-gray-600 dark:bg-gray-400 rounded-full animate-pulse"></div>
@@ -283,7 +295,7 @@ const VoiceChat = () => {
                           Listening...
                         </span>
                       )}
-                    </p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -305,6 +317,25 @@ const VoiceChat = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Navigation to User Profile */}
+      {conversationEnded && (
+        <Card className="mt-6">
+          <CardContent className="p-6 text-center">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">
+              Conversation Complete
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Your conversation data has been collected. View your detailed
+              profile to see all the information gathered.
+            </p>
+            <Button onClick={handleViewProfile} className="w-full max-w-xs">
+              <ExternalLink className="mr-2 h-4 w-4" />
+              View User Profile
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };
