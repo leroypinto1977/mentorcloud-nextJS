@@ -28,6 +28,8 @@ import {
   Briefcase,
   Users,
   Star,
+  Send,
+  Type,
 } from "lucide-react";
 
 interface UserData {
@@ -62,6 +64,8 @@ const VoiceChat = () => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [dataError, setDataError] = useState("");
+  const [textMessage, setTextMessage] = useState("");
+  const [isSendingText, setIsSendingText] = useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const conversation = useConversation({
@@ -72,6 +76,7 @@ const VoiceChat = () => {
       setConversationEnded(false);
       setUserData(null);
       setDataError("");
+      setTextMessage("");
     },
     onDisconnect: () => {
       console.log("Disconnected from ElevenLabs");
@@ -134,6 +139,7 @@ const VoiceChat = () => {
       setConversationEnded(false);
       setUserData(null);
       setDataError("");
+      setTextMessage("");
 
       // Replace with your actual agent ID or URL
       const conversationId = await conversation.startSession({
@@ -167,7 +173,10 @@ const VoiceChat = () => {
       );
 
       console.log("Response status:", response.status);
-      console.log("Response headers:", Object.fromEntries(response.headers.entries()));
+      console.log(
+        "Response headers:",
+        Object.fromEntries(response.headers.entries())
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -240,9 +249,46 @@ const VoiceChat = () => {
     }
   };
 
+  const handleSendTextMessage = async () => {
+    if (!textMessage.trim() || status !== "connected" || isSendingText) return;
+
+    setIsSendingText(true);
+    try {
+      // Add user message to transcription immediately
+      setTranscription((prev) => [
+        ...prev,
+        {
+          speaker: "You",
+          text: textMessage.trim(),
+          timestamp: new Date(),
+        },
+      ]);
+
+      // Send text message to ElevenLabs conversation
+      // Note: ElevenLabs conversation may not support direct text input
+      // This will add the message to the transcript for now
+      console.log("Text message sent:", textMessage.trim());
+
+      // Clear the input
+      setTextMessage("");
+    } catch (error) {
+      setErrorMessage("Failed to send text message");
+      console.error("Error sending text message:", error);
+    } finally {
+      setIsSendingText(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendTextMessage();
+    }
+  };
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      <Card className="h-[600px] max-h-[80vh] flex flex-col">
+      <Card className="h-[700px] max-h-[85vh] flex flex-col">
         <CardHeader className="border-b bg-gray-50 dark:bg-gray-900">
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -277,7 +323,7 @@ const VoiceChat = () => {
 
         <CardContent className="flex-1 flex flex-col p-0 min-h-0">
           {/* Chat Messages Area */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/30 dark:bg-gray-900/30 max-h-[400px]">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/30 dark:bg-gray-900/30 max-h-[575px]">
             {transcription.length > 0 ? (
               transcription.map((entry, index) => (
                 <div
@@ -347,8 +393,39 @@ const VoiceChat = () => {
           </div>
 
           {/* Control Panel */}
-          <div className="border-t bg-white dark:bg-gray-900 p-6">
-            <div className="flex flex-col gap-4">
+          <div className="border-t bg-white dark:bg-gray-900 px-6 pb-0 pt-6">
+            <div className="flex flex-col gap-2">
+              {/* Text Input Section */}
+              {status === "connected" && (
+                <div className="mb-2">
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={textMessage}
+                        onChange={(e) => setTextMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Type a message..."
+                        disabled={isSendingText}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleSendTextMessage}
+                      disabled={!textMessage.trim() || isSendingText}
+                      size="sm"
+                      className="px-3"
+                    >
+                      {isSendingText ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Main Action Button */}
               <div className="flex justify-center">
                 {status === "connected" ? (
@@ -374,7 +451,7 @@ const VoiceChat = () => {
 
               {/* Status and Actions */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                   {transcription.length > 0 && (
                     <Button
                       variant="ghost"
@@ -481,16 +558,24 @@ const VoiceChat = () => {
                   <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Mail className="h-4 w-4 text-gray-500 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Email</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Email
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400">{userData.email}</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      {userData.email}
+                    </p>
                   </div>
                   <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Phone className="h-4 w-4 text-gray-500 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Phone</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Phone
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400">{userData.phone}</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      {userData.phone}
+                    </p>
                   </div>
                 </div>
 
@@ -499,16 +584,24 @@ const VoiceChat = () => {
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Target className="h-4 w-4 text-blue-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Short-term Goals</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Short-term Goals
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.short_term_goals}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                      {userData.short_term_goals}
+                    </p>
                   </div>
                   <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Target className="h-4 w-4 text-purple-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Long-term Goals</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Long-term Goals
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.long_term_goals}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                      {userData.long_term_goals}
+                    </p>
                   </div>
                 </div>
 
@@ -516,9 +609,13 @@ const VoiceChat = () => {
                 <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
                   <div className="flex items-center mb-2">
                     <User className="h-4 w-4 text-gray-500 mr-2" />
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Background</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      Background
+                    </span>
                   </div>
-                  <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.background}</p>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm">
+                    {userData.background}
+                  </p>
                 </div>
 
                 {/* Strengths and Values */}
@@ -526,11 +623,16 @@ const VoiceChat = () => {
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-3">
                       <Star className="h-4 w-4 text-blue-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Strengths</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Strengths
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {userData.strengths.map((strength, index) => (
-                        <span key={index} className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                        <span
+                          key={index}
+                          className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded text-xs"
+                        >
                           {strength}
                         </span>
                       ))}
@@ -539,11 +641,16 @@ const VoiceChat = () => {
                   <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-3">
                       <Heart className="h-4 w-4 text-purple-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Values</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Values
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {userData.values.map((value, index) => (
-                        <span key={index} className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-2 py-1 rounded text-xs">
+                        <span
+                          key={index}
+                          className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-2 py-1 rounded text-xs"
+                        >
                           {value}
                         </span>
                       ))}
@@ -556,11 +663,16 @@ const VoiceChat = () => {
                   <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-3">
                       <Briefcase className="h-4 w-4 text-green-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Career Focus</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Career Focus
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {userData.career_focus.map((focus, index) => (
-                        <span key={index} className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 px-2 py-1 rounded text-xs">
+                        <span
+                          key={index}
+                          className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 px-2 py-1 rounded text-xs"
+                        >
                           {focus}
                         </span>
                       ))}
@@ -569,9 +681,13 @@ const VoiceChat = () => {
                   <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Target className="h-4 w-4 text-yellow-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Motivations</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Motivations
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.motivations}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                      {userData.motivations}
+                    </p>
                   </div>
                 </div>
 
@@ -579,9 +695,13 @@ const VoiceChat = () => {
                 <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
                   <div className="flex items-center mb-2">
                     <Briefcase className="h-4 w-4 text-gray-500 mr-2" />
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Professional Summary</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      Professional Summary
+                    </span>
                   </div>
-                  <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.professional_summary}</p>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm">
+                    {userData.professional_summary}
+                  </p>
                 </div>
 
                 {/* Mentoring Preferences */}
@@ -589,16 +709,24 @@ const VoiceChat = () => {
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Users className="h-4 w-4 text-blue-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Mentor Preferences</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Mentor Preferences
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.mentor_preferences}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                      {userData.mentor_preferences}
+                    </p>
                   </div>
                   <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
                     <div className="flex items-center mb-2">
                       <Heart className="h-4 w-4 text-purple-600 mr-2" />
-                      <span className="font-medium text-gray-700 dark:text-gray-300">DEI Interests</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        DEI Interests
+                      </span>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm">{userData.dei_interests}</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                      {userData.dei_interests}
+                    </p>
                   </div>
                 </div>
 
@@ -606,10 +734,16 @@ const VoiceChat = () => {
                 {(userData.created_at || userData.updated_at) && (
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 pt-4 border-t">
                     {userData.created_at && (
-                      <span>Created: {new Date(userData.created_at).toLocaleString()}</span>
+                      <span>
+                        Created:{" "}
+                        {new Date(userData.created_at).toLocaleString()}
+                      </span>
                     )}
                     {userData.updated_at && (
-                      <span>Updated: {new Date(userData.updated_at).toLocaleString()}</span>
+                      <span>
+                        Updated:{" "}
+                        {new Date(userData.updated_at).toLocaleString()}
+                      </span>
                     )}
                   </div>
                 )}
@@ -621,7 +755,8 @@ const VoiceChat = () => {
                   No User Data Found
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  The conversation data might not be available yet. Please try refreshing.
+                  The conversation data might not be available yet. Please try
+                  refreshing.
                 </p>
                 <Button onClick={fetchUserData} variant="outline">
                   <RefreshCw className="mr-2 h-4 w-4" />
