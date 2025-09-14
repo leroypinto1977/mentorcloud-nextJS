@@ -66,178 +66,7 @@ const VoiceChat = () => {
   const [dataError, setDataError] = useState("");
   const [textMessage, setTextMessage] = useState("");
   const [isSendingText, setIsSendingText] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
-
-  // Extract user data from agent's structured summary
-  const extractUserDataFromTranscript = (transcription: Array<{ speaker: string; text: string; timestamp: Date }>): UserData | null => {
-    console.log("🔍 Extracting user data from transcript...");
-    console.log("📝 Total messages in transcript:", transcription.length);
-    
-    // Look for structured summary in the last few agent messages
-    const agentMessages = transcription
-      .filter(msg => msg.speaker === "Agent")
-      .slice(-10); // Check last 10 agent messages for more coverage
-    
-    console.log("🤖 Agent messages to search:", agentMessages.length);
-      
-    for (const message of agentMessages.reverse()) {
-      console.log("🔎 Checking agent message:", message.text.substring(0, 100) + "...");
-      
-      // Look for structured summary pattern
-      const summaryMatch = message.text.match(
-        /---STRUCTURED_SUMMARY_START---([\s\S]*?)---STRUCTURED_SUMMARY_END---/
-      );
-      
-      if (summaryMatch) {
-        try {
-          console.log("📋 Found structured summary:", summaryMatch[1].trim());
-          const parsed = JSON.parse(summaryMatch[1].trim());
-          
-          // Handle different possible structures
-          if (parsed.user_profile) {
-            return parsed.user_profile;
-          } else if (parsed.name || parsed.email) {
-            // Direct structure
-            return parsed;
-          }
-        } catch (e) {
-          console.error("❌ Failed to parse structured summary:", e);
-        }
-      }
-      
-      // Alternative: Look for JSON-like data in agent messages
-      const jsonMatch = message.text.match(/\{[\s\S]*"name"[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          console.log("📋 Found JSON data in message:", jsonMatch[0]);
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.name || parsed.email) {
-            return parsed;
-          }
-        } catch (e) {
-          console.error("❌ Failed to parse JSON from message:", e);
-        }
-      }
-      
-      // Try to extract data from conversation context if Maya mentions completion
-      if (message.text.toLowerCase().includes("captured") && 
-          message.text.toLowerCase().includes("information")) {
-        console.log("🎯 Detected completion message, attempting to extract from conversation history");
-        
-        // Look through all messages for user information
-        const userInfo: Partial<UserData> = {};
-        const allMessages = transcription.map(t => t.text).join(' ');
-        
-        // Extract name patterns
-        const nameMatch = allMessages.match(/(?:name is|I'm|call me)\s+([A-Za-z\s]+)/i);
-        if (nameMatch) userInfo.name = nameMatch[1].trim();
-        
-        // Extract email patterns
-        const emailMatch = allMessages.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-        if (emailMatch) userInfo.email = emailMatch[1];
-        
-        // Extract phone patterns
-        const phoneMatch = allMessages.match(/(\+?[\d\s\-\(\)]{10,})/);
-        if (phoneMatch) userInfo.phone = phoneMatch[1];
-        
-        // If we found at least name or email, return what we have
-        if (userInfo.name || userInfo.email) {
-          console.log("📋 Extracted basic user info from conversation:", userInfo);
-          return {
-            id: "extracted-" + Date.now(),
-            name: userInfo.name || "Not provided",
-            email: userInfo.email || "Not provided", 
-            phone: userInfo.phone || "Not provided",
-            short_term_goals: "Not provided",
-            long_term_goals: "Not provided",
-            background: "Not provided",
-            strengths: [],
-            motivations: "Not provided",
-            values: [],
-            career_focus: [],
-            dei_interests: "Not provided",
-            mentor_preferences: "Not provided",
-            professional_summary: "Not provided"
-          } as UserData;
-        }
-      }
-    }
-    
-    console.log("❌ No structured data found in transcript");
-    return null;
-  };
-
-  // Test function to simulate Maya agent providing structured data via tool call
-  const testStructuredExtraction = () => {
-    // Test 1: Simulate tool call format
-    const testToolCall = {
-      type: "tool_call",
-      tool_call: {
-        name: "user-details",
-        parameters: {
-          body: {
-            name: "Sarah Johnson",
-            email: "sarah.johnson@example.com",
-            phone: "555-123-4567",
-            short_term_goals: "Move into a leadership role, become a tech lead in the next 2 years",
-            long_term_goals: "Start own company, transition from engineer to founder",
-            background: "Software engineer at tech startup with 3 years of coding experience",
-            strengths: ["Problem-solving", "Quick technology adoption", "Mentoring junior developers"],
-            motivations: "Leadership development and entrepreneurship",
-            values: ["Growth", "Helping others", "Innovation"],
-            career_focus: ["Technology leadership", "Entrepreneurship"],
-            dei_interests: "Promoting diversity in tech",
-            mentor_preferences: "Someone who has been through the journey from engineer to founder",
-            professional_summary: "Sarah is a software engineering professional with experience in technology development. She is recognized for problem-solving and quick technology adoption. Guided by values such as growth and innovation, Sarah is motivated by leadership development and entrepreneurship. Her near-term goals include moving into leadership roles, with aspirations to grow in entrepreneurship."
-          }
-        }
-      }
-    };
-
-    // Simulate the onMessage handler receiving this tool call
-    const messageAny = testToolCall as any;
-    if (messageAny.tool_call && messageAny.tool_call.name === "user-details") {
-      const userData = messageAny.tool_call.parameters.body;
-      console.log("Test: Extracted user data from tool call:", userData);
-      setUserData(userData);
-      setConversationEnded(true);
-      setIsLoadingData(false);
-    }
-  };
-
-  // Generate a unique session ID
-  const generateSessionId = () => {
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  };
-
-  // Register session with n8n
-  const registerSession = async (sessionId: string) => {
-    try {
-      const response = await fetch(
-        "https://madhan137.app.n8n.cloud/webhook/webhook/register-session",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sessionId: sessionId,
-            timestamp: new Date().toISOString(),
-            status: "started",
-          }),
-        }
-      );
-      
-      if (response.ok) {
-        console.log("Session registered successfully:", sessionId);
-      } else {
-        console.warn("Failed to register session:", response.statusText);
-      }
-    } catch (error) {
-      console.error("Error registering session:", error);
-    }
-  };
 
   const conversation = useConversation({
     onConnect: () => {
@@ -250,86 +79,13 @@ const VoiceChat = () => {
       setTextMessage("");
     },
     onDisconnect: () => {
-      console.log("🔌 Disconnected from ElevenLabs");
-      // Mark conversation as ended
+      console.log("Disconnected from ElevenLabs");
+      // Mark conversation as ended and fetch user data
       setConversationEnded(true);
-      
-      // Check if user data was already extracted via tool call during conversation
-      if (userData) {
-        console.log("✅ User data already extracted via tool call");
-        setIsLoadingData(false);
-        return;
-      }
-      
-      console.log("🔍 Starting data extraction process...");
-      setIsLoadingData(true);
-      
-      // Try multiple extraction methods in sequence
-      setTimeout(async () => {
-        // Method 1: Try to fetch from our API endpoint (Maya's tool call might have stored data here)
-        try {
-          console.log("🌐 Attempting to fetch from local API...");
-          const localApiResponse = await fetch('/api/user-details');
-          if (localApiResponse.ok) {
-            const apiData = await localApiResponse.json();
-            if (apiData.success && apiData.data) {
-              console.log("✅ Successfully fetched user data from local API:", apiData.data);
-              setUserData(apiData.data);
-              setIsLoadingData(false);
-              return;
-            }
-          }
-        } catch (apiError) {
-          console.log("⚠️ Local API fetch failed:", apiError);
-        }
-      
-        // Method 2: Try to extract user data from conversation transcript
-        const extractedData = extractUserDataFromTranscript(transcription);
-        if (extractedData) {
-          console.log("✅ Successfully extracted user data from conversation transcript:", extractedData);
-          setUserData(extractedData);
-          setIsLoadingData(false);
-          return;
-        }
-        
-        // Method 3: Try session-based fetch from n8n
-        if (sessionId) {
-          console.log("🔄 Falling back to session-based fetch...");
-          try {
-            await fetchUserData(sessionId);
-            return;
-          } catch (sessionError) {
-            console.log("⚠️ Session-based fetch failed:", sessionError);
-          }
-        }
-        
-        // Method 4: Try to fetch latest user from n8n (ultimate fallback)
-        try {
-          console.log("🔄 Trying to fetch latest user from n8n...");
-          const response = await fetch('https://madhan137.app.n8n.cloud/webhook/webhook/get-latest-user');
-          if (response.ok) {
-            const data = await response.json();
-            if (Array.isArray(data) && data.length > 0 && data[0].success) {
-              console.log("✅ Successfully fetched latest user data:", data[0].data);
-              setUserData(data[0].data);
-              setIsLoadingData(false);
-              return;
-            }
-          }
-        } catch (latestUserError) {
-          console.log("⚠️ Latest user fetch failed:", latestUserError);
-        }
-        
-        // If all methods fail
-        console.log("❌ All data extraction methods failed");
-        setIsLoadingData(false);
-        setDataError("No user data found in conversation. Maya may not have completed the data collection process.");
-      }, 2000); // Wait 2 seconds to ensure any pending tool calls complete
+      fetchUserData();
     },
     onMessage: (message) => {
-      console.log("📨 Received message:", message);
-      console.log("📨 Message type:", typeof message);
-      console.log("📨 Message keys:", Object.keys(message));
+      console.log("Received message:", message);
 
       // Handle transcript messages from ElevenLabs
       if (message.message && message.source) {
@@ -342,77 +98,6 @@ const VoiceChat = () => {
             timestamp: new Date(),
           },
         ]);
-        
-        // Enhanced logging for agent messages
-        if (speaker === "Agent") {
-          console.log("🤖 Agent message:", message.message);
-          
-          // Check if this message contains user data information
-          if (message.message.toLowerCase().includes("captured") || 
-              message.message.toLowerCase().includes("information") ||
-              message.message.toLowerCase().includes("perfect")) {
-            console.log("🎯 Potential completion message detected");
-          }
-        }
-      }
-
-      // Handle tool calls from the agent (with proper type checking)
-      const messageAny = message as any;
-      
-      // Log all properties of the message to understand its structure
-      console.log("🔍 Full message structure:", JSON.stringify(messageAny, null, 2));
-      
-      if (messageAny.type === "tool_call" || messageAny.tool_call) {
-        console.log("🛠️ Tool call detected:", messageAny);
-        const toolCall = messageAny.tool_call || messageAny;
-        
-        // Check if this is the user-details tool call
-        if (toolCall.name === "user-details" || toolCall.function?.name === "user-details") {
-          const userData = toolCall.parameters?.body || toolCall.function?.arguments?.body;
-          if (userData) {
-            console.log("✅ Extracted user data from tool call:", userData);
-            setUserData(userData);
-            setConversationEnded(true);
-            setIsLoadingData(false);
-          }
-        }
-      }
-
-      // Handle function calls (alternative format)
-      if (messageAny.function_call) {
-        console.log("🔧 Function call detected:", messageAny.function_call);
-        if (messageAny.function_call.name === "user-details") {
-          try {
-            const args = JSON.parse(messageAny.function_call.arguments);
-            const userData = args.body || args;
-            if (userData) {
-              console.log("✅ Extracted user data from function call:", userData);
-              setUserData(userData);
-              setConversationEnded(true);
-              setIsLoadingData(false);
-            }
-          } catch (e) {
-            console.error("❌ Failed to parse function call arguments:", e);
-          }
-        }
-      }
-
-      // Also check if the tool data is embedded in the message text (some ElevenLabs integrations do this)
-      if (message.message && message.source !== "user") {
-        const toolCallMatch = message.message.match(/user-details.*?(\{[\s\S]*?\})/);
-        if (toolCallMatch) {
-          try {
-            const userData = JSON.parse(toolCallMatch[1]);
-            if (userData.name || userData.email) {
-              console.log("✅ Extracted user data from message text:", userData);
-              setUserData(userData);
-              setConversationEnded(true);
-              setIsLoadingData(false);
-            }
-          } catch (e) {
-            console.error("❌ Failed to parse tool data from message:", e);
-          }
-        }
       }
     },
     onError: (error: string | Error) => {
@@ -449,14 +134,6 @@ const VoiceChat = () => {
 
   const handleStartConversation = async () => {
     try {
-      // Generate a new session ID
-      const newSessionId = generateSessionId();
-      setSessionId(newSessionId);
-      console.log("Generated session ID:", newSessionId);
-
-      // Register the session with n8n
-      await registerSession(newSessionId);
-
       // Clear previous transcription and reset conversation state
       setTranscription([]);
       setConversationEnded(false);
@@ -468,7 +145,7 @@ const VoiceChat = () => {
       const conversationId = await conversation.startSession({
         agentId: process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID!,
       });
-      console.log("Started conversation:", conversationId, "with session ID:", newSessionId);
+      console.log("Started conversation:", conversationId);
     } catch (error) {
       setErrorMessage("Failed to start conversation");
       console.error("Error starting conversation:", error);
@@ -485,14 +162,14 @@ const VoiceChat = () => {
     }
   };
 
-  const fetchUserData = async (sessionId: string) => {
-    console.log("Fetching user data for session:", sessionId);
+  const fetchUserData = async () => {
+    console.log("Fetching user data...");
     setIsLoadingData(true);
     setDataError("");
 
     try {
       const response = await fetch(
-        `https://madhan137.app.n8n.cloud/webhook/webhook/get-user-data?sessionId=${sessionId}`
+        "https://madhan137.app.n8n.cloud/webhook/webhook/get-latest-user"
       );
 
       console.log("Response status:", response.status);
@@ -617,11 +294,6 @@ const VoiceChat = () => {
             <div className="flex items-center gap-3">
               <MessageCircle className="h-6 w-6 text-gray-700 dark:text-gray-300" />
               <span className="text-xl">Voice Chat Assistant</span>
-              {sessionId && (
-                <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">
-                  Session: {sessionId.split('_')[1]}
-                </span>
-              )}
               {status === "connected" && (
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-gray-600 dark:bg-gray-400 rounded-full animate-pulse"></div>
@@ -791,19 +463,6 @@ const VoiceChat = () => {
                       Clear Chat
                     </Button>
                   )}
-                  
-                  {/* Test button for development */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={testStructuredExtraction}
-                      className="text-xs h-8 px-3 bg-blue-50 text-blue-600 hover:bg-blue-100"
-                    >
-                      <Database className="mr-1 h-3 w-3" />
-                      Test Extract
-                    </Button>
-                  )}
                 </div>
 
                 <div className="text-right">
@@ -870,11 +529,7 @@ const VoiceChat = () => {
                 <p className="text-red-500 bg-red-50 dark:bg-red-950/20 px-4 py-3 rounded-lg mb-4">
                   {dataError}
                 </p>
-                <Button 
-                  onClick={() => sessionId && fetchUserData(sessionId)} 
-                  variant="outline"
-                  disabled={!sessionId}
-                >
+                <Button onClick={fetchUserData} variant="outline">
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Try Again
                 </Button>
@@ -1103,11 +758,7 @@ const VoiceChat = () => {
                   The conversation data might not be available yet. Please try
                   refreshing.
                 </p>
-                <Button 
-                  onClick={() => sessionId && fetchUserData(sessionId)} 
-                  variant="outline"
-                  disabled={!sessionId}
-                >
+                <Button onClick={fetchUserData} variant="outline">
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Refresh Data
                 </Button>
